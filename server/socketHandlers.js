@@ -77,10 +77,10 @@ export function registerHandlers(io, socket) {
     io.to(room.roomCode).emit(Events.LOBBY_SETTINGS_UPDATED, room.settings);
   });
 
-  // Lobby: submit custom symptom
+  // Lobby: submit custom symptom (also allowed during RESULTS so players can add for next round)
   socket.on(Events.LOBBY_SUBMIT_SYMPTOM, ({ text }) => {
     const room = roomManager.getRoom(socket.data?.roomCode);
-    if (!room || room.phase !== Phase.LOBBY) return;
+    if (!room || (room.phase !== Phase.LOBBY && room.phase !== Phase.RESULTS)) return;
     if (room.customSymptoms.length >= 50) return; // cap
     const symptom = {
       id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
@@ -194,6 +194,38 @@ export function registerHandlers(io, socket) {
     } catch (e) {
       socket.emit(Events.ROOM_ERROR, { message: e.message });
     }
+  });
+
+  // Host: advance results step
+  socket.on(Events.HOST_ADVANCE_RESULTS, () => {
+    const room = roomManager.getRoom(socket.data?.roomCode);
+    if (!room || room.hostId !== socket.data?.playerId) return;
+    try {
+      transition(room, { type: 'ADVANCE_RESULTS' });
+      emitStateToRoom(io, room);
+    } catch (e) {
+      socket.emit(Events.ROOM_ERROR, { message: e.message });
+    }
+  });
+
+  // Host: psychiatrist gives up — end round without a correct guess
+  socket.on(Events.HOST_GIVE_UP, () => {
+    const room = roomManager.getRoom(socket.data?.roomCode);
+    if (!room || room.hostId !== socket.data?.playerId) return;
+    try {
+      transition(room, { type: 'GIVE_UP' });
+      emitStateToRoom(io, room);
+    } catch (e) {
+      socket.emit(Events.ROOM_ERROR, { message: e.message });
+    }
+  });
+
+  // Host: reset room back to lobby for a new game
+  socket.on(Events.HOST_RESET_LOBBY, () => {
+    const room = roomManager.getRoom(socket.data?.roomCode);
+    if (!room || room.hostId !== socket.data?.playerId) return;
+    transition(room, { type: 'RESET_LOBBY' });
+    emitStateToRoom(io, room);
   });
 
   // Disconnect

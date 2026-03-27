@@ -7,6 +7,7 @@ import { createRoom, deleteRoom } from '../roomManager.js';
 function makeRoom(playerCount = 3, variant = 'classic') {
   const { room, playerId: hostId } = createRoom('Host', 'socket_host');
   room.settings.variant = variant;
+  room.settings.bluffChance = 0; // disable bluff rounds in tests for determinism
   for (let i = 1; i < playerCount; i++) {
     const pid = `player_${i}`;
     room.players.push({ id: pid, name: `Player${i}`, socketId: `socket_${i}`, connected: true, avatarIndex: i });
@@ -66,6 +67,15 @@ describe('transition: START_GAME', () => {
 
   it('does NOT assign crazy_patient in classic variant', () => {
     const { room } = makeRoom(3, 'classic');
+    transition(room, { type: 'START_GAME' });
+    expect(room.crazyPatientId).toBeNull();
+    expect(room.crazySymptom).toBeNull();
+    cleanup(room);
+  });
+
+  it('runs a bluff round (no crazy patient) when bluffChance is 1', () => {
+    const { room } = makeRoom(3, 'crazy_patient');
+    room.settings.bluffChance = 1;
     transition(room, { type: 'START_GAME' });
     expect(room.crazyPatientId).toBeNull();
     expect(room.crazySymptom).toBeNull();
@@ -370,8 +380,12 @@ describe('getPlayerView: information filtering', () => {
 // Helper: add custom symptoms to a room
 function addCustomSymptoms(room, count) {
   for (let i = 0; i < count; i++) {
-    room.customSymptoms.push({ id: `c${i}`, text: `Custom symptom ${i}`, category: 'custom' });
+    room.customSymptoms.push({ id: `custom_${i}`, text: `Custom symptom ${i}` });
   }
+}
+
+function isCustom(symptom) {
+  return symptom?.id?.startsWith('custom_');
 }
 
 describe('selectSharedSymptom: custom mode', () => {
@@ -380,7 +394,7 @@ describe('selectSharedSymptom: custom mode', () => {
     room.settings.symptomSource = 'custom';
     addCustomSymptoms(room, 3);
     transition(room, { type: 'START_GAME' });
-    expect(room.sharedSymptom.category).toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(true);
     cleanup(room);
   });
 
@@ -389,10 +403,9 @@ describe('selectSharedSymptom: custom mode', () => {
     room.settings.symptomSource = 'custom';
     addCustomSymptoms(room, 1);
     // Exhaust the one custom symptom
-    room.usedSymptoms.add('c0');
+    room.usedSymptoms.add('custom_0');
     transition(room, { type: 'START_GAME' });
-    // Should have used a built-in symptom (not category 'custom')
-    expect(room.sharedSymptom.category).not.toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(false);
     cleanup(room);
   });
 
@@ -401,7 +414,7 @@ describe('selectSharedSymptom: custom mode', () => {
     room.settings.symptomSource = 'custom';
     // No custom symptoms added
     transition(room, { type: 'START_GAME' });
-    expect(room.sharedSymptom.category).not.toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(false);
     cleanup(room);
   });
 });
@@ -413,7 +426,7 @@ describe('selectSharedSymptom: mixed mode', () => {
     addCustomSymptoms(room, 5);
     // currentRound is 0, upcomingRound = 1 (odd) → prefers custom
     transition(room, { type: 'START_GAME' });
-    expect(room.sharedSymptom.category).toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(true);
     cleanup(room);
   });
 
@@ -421,19 +434,16 @@ describe('selectSharedSymptom: mixed mode', () => {
     const { room } = makeRoom(3);
     room.settings.symptomSource = 'mixed';
     addCustomSymptoms(room, 5);
-    // Simulate being at round 1 already (currentRound = 1), so upcomingRound = 2 (even)
-    room.currentRound = 1;
+    // Simulate being at round 2 (even): psychiatristIndex must be even after increment
     room.psychiatristOrder = room.players.map(p => p.id);
-    room.psychiatristIndex = 1;
+    room.psychiatristIndex = 1; // will be incremented to 2 (even) in assignRoles
     room.phase = Phase.RESULTS;
     room.sharedSymptom = room.customSymptoms[0];
-    room.usedSymptoms.add('c0');
-    room.roundHistory = [{}]; // dummy
-    room.settings.totalRounds = 5;
+    room.usedSymptoms.add('custom_0');
     room.guessTime = 1000;
     transition(room, { type: 'END_ROUND' });
     // After END_ROUND → assignRoles for round 2
-    expect(room.sharedSymptom.category).not.toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(false);
     cleanup(room);
   });
 
@@ -441,10 +451,10 @@ describe('selectSharedSymptom: mixed mode', () => {
     const { room } = makeRoom(3);
     room.settings.symptomSource = 'mixed';
     addCustomSymptoms(room, 1);
-    room.usedSymptoms.add('c0'); // exhaust custom
+    room.usedSymptoms.add('custom_0'); // exhaust custom
     // upcomingRound = 1 (odd) → prefers custom, but exhausted → bank
     transition(room, { type: 'START_GAME' });
-    expect(room.sharedSymptom.category).not.toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(false);
     cleanup(room);
   });
 
@@ -453,7 +463,7 @@ describe('selectSharedSymptom: mixed mode', () => {
     room.settings.symptomSource = 'mixed';
     // No custom symptoms added
     transition(room, { type: 'START_GAME' });
-    expect(room.sharedSymptom.category).not.toBe('custom');
+    expect(isCustom(room.sharedSymptom)).toBe(false);
     cleanup(room);
   });
 });

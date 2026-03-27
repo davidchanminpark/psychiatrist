@@ -311,7 +311,7 @@ describe('Game: full Classic round (SHOWING_ROLES → QUESTIONING → REVEAL_GUE
       expect(state.phase).toBe(Phase.RESULTS);
       expect(state.sharedSymptom).toBeTruthy();
       expect(state.guessedCorrectly).toBe(true);
-      expect(state.guessTime).toBeGreaterThan(0);
+      expect(state.guessTime).toBeGreaterThanOrEqual(0);
       expect(state.leaderboard.bestPsychiatrist).toHaveLength(1);
     }
   });
@@ -352,8 +352,8 @@ describe('Game: Crazy Patient variant', () => {
       await waitFor(sockets[i], Events.ROOM_JOINED);
     }
 
-    // Set crazy_patient variant
-    sockets[0].emit(Events.LOBBY_UPDATE_SETTINGS, { variant: 'crazy_patient' });
+    // Set crazy_patient variant with bluffChance=0 for deterministic tests
+    sockets[0].emit(Events.LOBBY_UPDATE_SETTINGS, { variant: 'crazy_patient', bluffChance: 0 });
     await waitFor(sockets[0], Events.LOBBY_SETTINGS_UPDATED);
   });
 

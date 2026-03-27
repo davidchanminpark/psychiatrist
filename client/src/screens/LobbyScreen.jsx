@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { usePlayer } from '../context/PlayerContext';
 import { useGame } from '../context/GameContext';
 import { Events } from 'shared/events.js';
 import { Phase } from 'shared/phases.js';
+
+const DEFAULT_SYMPTOM_PLACEHOLDERS = [
+  'You can only whisper',
+  'You are a car salesman',
+  'You are sad',
+];
 
 export default function LobbyScreen() {
   const { roomCode } = useParams();
@@ -21,6 +27,11 @@ export default function LobbyScreen() {
   const [error, setError] = useState('');
 
   const isHost = player?.isHost;
+  const symptomPlaceholder = useMemo(() => {
+    return DEFAULT_SYMPTOM_PLACEHOLDERS[
+      Math.floor(Math.random() * DEFAULT_SYMPTOM_PLACEHOLDERS.length)
+    ];
+  }, []);
 
   // Listen for player join/leave
   useEffect(() => {
@@ -81,7 +92,8 @@ export default function LobbyScreen() {
 
   // Navigate to game when phase changes from LOBBY
   useEffect(() => {
-    if (gameState && gameState.phase !== Phase.LOBBY) {
+    const inGamePhases = [Phase.SHOWING_ROLES, Phase.QUESTIONING, Phase.REVEAL_GUESS, Phase.CRAZY_PATIENT_GUESS, Phase.RESULTS];
+    if (gameState && inGamePhases.includes(gameState.phase)) {
       navigate(`/game/${roomCode}`);
     }
     if (gameState && gameState.players) {
@@ -219,7 +231,7 @@ export default function LobbyScreen() {
             <input
               className="input"
               style={{ flex: 1 }}
-              placeholder="Add a symptom... (or skip)"
+              placeholder={symptomPlaceholder}
               value={symptomInput}
               onChange={e => setSymptomInput(e.target.value)}
               maxLength={80}
