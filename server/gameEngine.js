@@ -14,14 +14,45 @@ function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function selectSymptom(room, pool) {
+// Pick from pool if any unused remain; returns null if pool exhausted
+function tryPool(room, pool) {
   const available = pool.filter(s => !room.usedSymptoms.has(s.id));
-  if (available.length === 0) {
-    // Reset if all used
-    room.usedSymptoms.clear();
-    return pickRandom(pool);
+  return available.length > 0 ? pickRandom(available) : null;
+}
+
+// Pick from built-in bank, resetting usedSymptoms if all exhausted
+function pickFromBank(room) {
+  const bank = getSharedSymptoms();
+  const s = tryPool(room, bank);
+  if (s) return s;
+  room.usedSymptoms.clear();
+  return pickRandom(bank);
+}
+
+function selectSharedSymptom(room) {
+  const source = room.settings.symptomSource;
+  const custom = room.customSymptoms;
+
+  if (source === 'custom' && custom.length > 0) {
+    // Use custom pool; when exhausted fall back to built-in bank
+    return tryPool(room, custom) ?? pickFromBank(room);
   }
-  return pickRandom(available);
+
+  if (source === 'mixed' && custom.length > 0) {
+    // Alternate: custom on odd rounds, bank on even rounds.
+    // currentRound is the round about to start (incremented later in assignRoles).
+    const upcomingRound = room.currentRound + 1;
+    const preferCustom = upcomingRound % 2 === 1;
+    if (preferCustom) {
+      // Try custom; if exhausted, use bank
+      return tryPool(room, custom) ?? pickFromBank(room);
+    }
+    // Even round: always bank
+    return pickFromBank(room);
+  }
+
+  // builtin (or custom/mixed with no custom symptoms submitted)
+  return pickFromBank(room);
 }
 
 function assignRoles(room) {
@@ -45,13 +76,7 @@ function assignRoles(room) {
   }
 
   // Select shared symptom
-  const sharedPool = room.settings.symptomSource === 'custom'
-    ? room.customSymptoms
-    : room.settings.symptomSource === 'mixed'
-      ? [...getSharedSymptoms(), ...room.customSymptoms]
-      : getSharedSymptoms();
-
-  const symptom = selectSymptom(room, sharedPool);
+  const symptom = selectSharedSymptom(room);
   room.sharedSymptom = symptom;
   room.usedSymptoms.add(symptom.id);
 

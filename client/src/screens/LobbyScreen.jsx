@@ -123,7 +123,7 @@ export default function LobbyScreen() {
   }
 
   const connectedCount = players.filter(p => p.connected).length;
-  const showCustomSymptoms = settings.symptomSource === 'custom' || settings.symptomSource === 'mixed';
+  const customSymptomsActive = settings.symptomSource === 'custom' || settings.symptomSource === 'mixed';
 
   return (
     <div className="screen">
@@ -207,55 +207,58 @@ export default function LobbyScreen() {
           </div>
         )}
 
-        {/* Custom symptoms */}
-        {showCustomSymptoms && (
-          <div className="card animate-fade-in">
-            <h3 className="mb-md">Custom Symptoms ({customSymptoms.length})</h3>
-            <form onSubmit={handleAddSymptom} className="flex-row gap-sm mb-md">
-              <input
-                className="input"
-                style={{ flex: 1 }}
-                placeholder="Add a symptom..."
-                value={symptomInput}
-                onChange={e => setSymptomInput(e.target.value)}
-                maxLength={80}
-              />
-              <button type="submit" className="btn btn-primary btn-sm" disabled={!symptomInput.trim()}>
-                Add
-              </button>
-            </form>
-            {customSymptoms.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: '0.85rem' }}>No custom symptoms yet.</p>
-            ) : (
-              <div className="flex-col gap-sm">
-                {customSymptoms.map(s => (
-                  <div
-                    key={s.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      background: 'var(--bg-secondary)',
-                      borderRadius: 'var(--border-radius-sm)',
-                    }}
-                  >
-                    <span style={{ flex: 1, fontSize: '0.9rem' }}>{s.text}</span>
-                    {isHost && (
-                      <button
-                        className="btn btn-danger btn-sm"
-                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                        onClick={() => handleRemoveSymptom(s.id)}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Custom symptoms — always visible so anyone can add */}
+        <div className="card animate-fade-in">
+          <h3 className="mb-md">Custom Symptoms ({customSymptoms.length})</h3>
+          {!customSymptomsActive && (
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: 12 }}>
+              These will be used when host selects Custom or Mixed mode.
+            </p>
+          )}
+          <form onSubmit={handleAddSymptom} className="flex-row gap-sm mb-md">
+            <input
+              className="input"
+              style={{ flex: 1 }}
+              placeholder="Add a symptom... (or skip)"
+              value={symptomInput}
+              onChange={e => setSymptomInput(e.target.value)}
+              maxLength={80}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!symptomInput.trim()}>
+              Add
+            </button>
+          </form>
+          {customSymptoms.length === 0 ? (
+            <p className="text-muted" style={{ fontSize: '0.85rem' }}>No custom symptoms yet.</p>
+          ) : (
+            <div className="flex-col gap-sm">
+              {customSymptoms.map(s => (
+                <div
+                  key={s.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 12px',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: 'var(--border-radius-sm)',
+                  }}
+                >
+                  <span style={{ flex: 1, fontSize: '0.9rem' }}>{s.text}</span>
+                  {isHost && (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                      onClick={() => handleRemoveSymptom(s.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {error && <p className="error-msg">{error}</p>}
 
