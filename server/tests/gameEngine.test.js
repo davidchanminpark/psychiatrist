@@ -42,14 +42,6 @@ describe('transition: START_GAME', () => {
     cleanup(room);
   });
 
-  it('increments currentRound to 1', () => {
-    const { room } = makeRoom(3);
-    expect(room.currentRound).toBe(0);
-    transition(room, { type: 'START_GAME' });
-    expect(room.currentRound).toBe(1);
-    cleanup(room);
-  });
-
   it('throws if not in LOBBY phase', () => {
     const { room } = makeRoom(3);
     room.phase = Phase.QUESTIONING;
@@ -255,29 +247,10 @@ describe('transition: END_ROUND', () => {
     return room;
   }
 
-  it('saves round to history', () => {
+  it('always moves to SHOWING_ROLES', () => {
     const room = setupResults();
-    transition(room, { type: 'END_ROUND' });
-    expect(room.roundHistory).toHaveLength(1);
-    expect(room.roundHistory[0].sharedSymptom).toBeTruthy();
-    cleanup(room);
-  });
-
-  it('moves to SHOWING_ROLES if rounds remain', () => {
-    const room = setupResults();
-    room.settings.totalRounds = 5;
-    room.currentRound = 1;
     transition(room, { type: 'END_ROUND' });
     expect(room.phase).toBe(Phase.SHOWING_ROLES);
-    cleanup(room);
-  });
-
-  it('moves to END_GAME after last round', () => {
-    const room = setupResults();
-    room.settings.totalRounds = 3;
-    room.currentRound = 3;
-    transition(room, { type: 'END_ROUND' });
-    expect(room.phase).toBe(Phase.END_GAME);
     cleanup(room);
   });
 

@@ -33,12 +33,10 @@ export function createRoom(playerName, socketId) {
     settings: {
       variant: 'classic',
       symptomSource: 'builtin',
-      totalRounds: 5,
       maxQuestionRounds: 10,
     },
     customSymptoms: [],
     phase: Phase.LOBBY,
-    currentRound: 0,
     questionRound: 0,
     psychiatristId: null,
     crazyPatientId: null,
@@ -54,7 +52,6 @@ export function createRoom(playerName, socketId) {
       bestPsychiatrist: [], // { playerId, playerName, time }
       crazies: [],          // { playerId, playerName, crazySymptom }
     },
-    roundHistory: [],
     createdAt: Date.now(),
     lastActivity: Date.now(),
   };

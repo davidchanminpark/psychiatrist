@@ -15,7 +15,6 @@ export default function LobbyScreen() {
   const [settings, setSettings] = useState({
     variant: 'classic',
     symptomSource: 'builtin',
-    totalRounds: 5,
   });
   const [customSymptoms, setCustomSymptoms] = useState([]);
   const [symptomInput, setSymptomInput] = useState('');
@@ -179,20 +178,6 @@ export default function LobbyScreen() {
 
               <div>
                 <label className="text-muted" style={{ fontSize: '0.85rem', display: 'block', marginBottom: 6 }}>
-                  Rounds: {settings.totalRounds}
-                </label>
-                <input
-                  type="range"
-                  min="1"
-                  max="15"
-                  value={settings.totalRounds}
-                  onChange={e => handleSettingChange('totalRounds', parseInt(e.target.value))}
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              <div>
-                <label className="text-muted" style={{ fontSize: '0.85rem', display: 'block', marginBottom: 6 }}>
                   Symptoms
                 </label>
                 <div className="flex-row gap-sm flex-wrap">
@@ -217,7 +202,6 @@ export default function LobbyScreen() {
             <h3 className="mb-md">Game Settings</h3>
             <p className="text-muted">
               Mode: <strong>{settings.variant === 'classic' ? 'Classic' : 'Crazy Patient'}</strong>
-              {' '} | Rounds: <strong>{settings.totalRounds}</strong>
             </p>
             <p className="text-muted mt-sm">Waiting for host to start...</p>
           </div>

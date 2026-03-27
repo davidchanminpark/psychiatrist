@@ -196,16 +196,14 @@ function HostControls({ gameState }) {
             className="btn btn-primary btn-sm"
             onClick={() => socket.emit(Events.HOST_END_ROUND)}
           >
-            {gameState.currentRound >= gameState.totalRounds ? 'Final Results' : 'Next Round'}
+            Next Round
           </button>
-          {gameState.currentRound < gameState.totalRounds && (
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={() => socket.emit(Events.HOST_END_GAME)}
-            >
-              End Game
-            </button>
-          )}
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={() => socket.emit(Events.HOST_END_GAME)}
+          >
+            End Game
+          </button>
         </>
       )}
     </div>
