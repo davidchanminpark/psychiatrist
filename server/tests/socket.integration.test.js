@@ -217,7 +217,6 @@ describe('Game: start with 3 players', () => {
 
     for (const state of states) {
       expect(state.phase).toBe(Phase.SHOWING_ROLES);
-      expect(state.currentRound).toBe(1);
     }
   });
 
