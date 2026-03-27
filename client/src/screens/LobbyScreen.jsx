@@ -17,6 +17,8 @@ export default function LobbyScreen() {
     symptomSource: 'builtin',
     totalRounds: 5,
   });
+  const [customSymptoms, setCustomSymptoms] = useState([]);
+  const [symptomInput, setSymptomInput] = useState('');
   const [error, setError] = useState('');
 
   const isHost = player?.isHost;
@@ -40,17 +42,27 @@ export default function LobbyScreen() {
     function onError({ message }) {
       setError(message);
     }
+    function onSymptomAdded(symptom) {
+      setCustomSymptoms(prev => [...prev, symptom]);
+    }
+    function onSymptomRemoved({ id }) {
+      setCustomSymptoms(prev => prev.filter(s => s.id !== id));
+    }
 
     socket.on(Events.ROOM_PLAYER_JOINED, onPlayerJoined);
     socket.on(Events.ROOM_PLAYER_LEFT, onPlayerLeft);
     socket.on(Events.LOBBY_SETTINGS_UPDATED, onSettingsUpdated);
     socket.on(Events.ROOM_ERROR, onError);
+    socket.on(Events.LOBBY_SYMPTOM_ADDED, onSymptomAdded);
+    socket.on(Events.LOBBY_SYMPTOM_REMOVED, onSymptomRemoved);
 
     return () => {
       socket.off(Events.ROOM_PLAYER_JOINED, onPlayerJoined);
       socket.off(Events.ROOM_PLAYER_LEFT, onPlayerLeft);
       socket.off(Events.LOBBY_SETTINGS_UPDATED, onSettingsUpdated);
       socket.off(Events.ROOM_ERROR, onError);
+      socket.off(Events.LOBBY_SYMPTOM_ADDED, onSymptomAdded);
+      socket.off(Events.LOBBY_SYMPTOM_REMOVED, onSymptomRemoved);
     };
   }, []);
 
@@ -76,6 +88,9 @@ export default function LobbyScreen() {
     if (gameState && gameState.players) {
       setPlayers(gameState.players);
     }
+    if (gameState && gameState.customSymptoms) {
+      setCustomSymptoms(gameState.customSymptoms);
+    }
   }, [gameState, roomCode, navigate]);
 
   // Initial player list from join/create
@@ -96,7 +111,20 @@ export default function LobbyScreen() {
     socket.emit(Events.LOBBY_UPDATE_SETTINGS, { [key]: value });
   }
 
+  function handleAddSymptom(e) {
+    e.preventDefault();
+    const text = symptomInput.trim();
+    if (!text) return;
+    socket.emit(Events.LOBBY_SUBMIT_SYMPTOM, { text });
+    setSymptomInput('');
+  }
+
+  function handleRemoveSymptom(id) {
+    socket.emit(Events.LOBBY_REMOVE_SYMPTOM, { id });
+  }
+
   const connectedCount = players.filter(p => p.connected).length;
+  const showCustomSymptoms = settings.symptomSource === 'custom' || settings.symptomSource === 'mixed';
 
   return (
     <div className="screen">
@@ -192,6 +220,56 @@ export default function LobbyScreen() {
               {' '} | Rounds: <strong>{settings.totalRounds}</strong>
             </p>
             <p className="text-muted mt-sm">Waiting for host to start...</p>
+          </div>
+        )}
+
+        {/* Custom symptoms */}
+        {showCustomSymptoms && (
+          <div className="card animate-fade-in">
+            <h3 className="mb-md">Custom Symptoms ({customSymptoms.length})</h3>
+            <form onSubmit={handleAddSymptom} className="flex-row gap-sm mb-md">
+              <input
+                className="input"
+                style={{ flex: 1 }}
+                placeholder="Add a symptom..."
+                value={symptomInput}
+                onChange={e => setSymptomInput(e.target.value)}
+                maxLength={80}
+              />
+              <button type="submit" className="btn btn-primary btn-sm" disabled={!symptomInput.trim()}>
+                Add
+              </button>
+            </form>
+            {customSymptoms.length === 0 ? (
+              <p className="text-muted" style={{ fontSize: '0.85rem' }}>No custom symptoms yet.</p>
+            ) : (
+              <div className="flex-col gap-sm">
+                {customSymptoms.map(s => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--border-radius-sm)',
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: '0.9rem' }}>{s.text}</span>
+                    {isHost && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                        onClick={() => handleRemoveSymptom(s.id)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
