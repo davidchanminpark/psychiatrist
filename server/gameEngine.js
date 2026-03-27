@@ -1,5 +1,5 @@
 import { Phase } from 'shared/phases.js';
-import { getSharedSymptoms, getCrazySymptoms } from './symptoms.js';
+import { getSharedSymptoms, generalCrazySymptoms } from './symptoms.js';
 
 function shuffleArray(arr) {
   const shuffled = [...arr];
@@ -40,9 +40,8 @@ function selectSharedSymptom(room) {
 
   if (source === 'mixed' && custom.length > 0) {
     // Alternate: custom on odd rounds, bank on even rounds.
-    // currentRound is the round about to start (incremented later in assignRoles).
-    const upcomingRound = room.currentRound + 1;
-    const preferCustom = upcomingRound % 2 === 1;
+    // psychiatristIndex is already incremented for this round in assignRoles.
+    const preferCustom = room.psychiatristIndex % 2 === 1;
     if (preferCustom) {
       // Try custom; if exhausted, use bank
       return tryPool(room, custom) ?? pickFromBank(room);
@@ -53,6 +52,40 @@ function selectSharedSymptom(room) {
 
   // builtin (or custom/mixed with no custom symptoms submitted)
   return pickFromBank(room);
+}
+
+// Pick an unused bank symptom (excluding the shared one); falls back to any if all used
+function pickUnusedBankSymptom(sharedSymptom, room) {
+  const bank = getSharedSymptoms();
+  const others = bank.filter(s => s.id !== sharedSymptom?.id);
+  const unused = others.filter(s => !room.usedSymptoms.has(s.id));
+  const pool = unused.length > 0 ? unused : others.length > 0 ? others : bank;
+  const picked = pickRandom(pool);
+  return { id: picked.id, text: picked.text };
+}
+
+// Pick a crazy symptom.
+// Custom shared symptom → 2-way: general crazy pool OR unused bank symptom (no tailored variations)
+// Bank shared symptom   → 3-way: tailored variations OR general crazy pool OR unused bank symptom
+function selectCrazySymptom(sharedSymptom, room) {
+  const isCustom = !Array.isArray(sharedSymptom?.crazyVariations);
+
+  if (isCustom) {
+    const sources = [
+      () => pickRandom(generalCrazySymptoms),
+      () => pickUnusedBankSymptom(sharedSymptom, room),
+    ];
+    return pickRandom(sources)();
+  }
+
+  const sources = [];
+  if (sharedSymptom.crazyVariations.length > 0) {
+    sources.push(() => ({ id: `${sharedSymptom.id}_var`, text: pickRandom(sharedSymptom.crazyVariations) }));
+  }
+  sources.push(() => pickRandom(generalCrazySymptoms));
+  sources.push(() => pickUnusedBankSymptom(sharedSymptom, room));
+
+  return pickRandom(sources)();
 }
 
 function assignRoles(room) {
@@ -82,14 +115,18 @@ function assignRoles(room) {
 
   // Crazy patient
   if (room.settings.variant === 'crazy_patient') {
-    const eligiblePatients = room.players.filter(
-      p => p.id !== room.psychiatristId && p.connected
-    );
-    const crazyPatient = pickRandom(eligiblePatients);
-    room.crazyPatientId = crazyPatient.id;
-
-    const crazyPool = getCrazySymptoms();
-    room.crazySymptom = pickRandom(crazyPool);
+    const bluffChance = room.settings.bluffChance ?? 0.3;
+    if (Math.random() < bluffChance) {
+      // Bluff round — no crazy patient, group will guess anyway
+      room.crazyPatientId = null;
+      room.crazySymptom = null;
+    } else {
+      const eligiblePatients = room.players.filter(
+        p => p.id !== room.psychiatristId && p.connected
+      );
+      room.crazyPatientId = pickRandom(eligiblePatients).id;
+      room.crazySymptom = selectCrazySymptom(room.sharedSymptom, room);
+    }
   } else {
     room.crazyPatientId = null;
     room.crazySymptom = null;
@@ -135,6 +172,18 @@ export function transition(room, action) {
       return room;
     }
 
+    case 'GIVE_UP': {
+      if (room.phase !== Phase.QUESTIONING) throw new Error('Not in questioning phase');
+      room.guessTime = null;
+      if (room.settings.variant === 'crazy_patient') {
+        room.phase = Phase.CRAZY_PATIENT_GUESS;
+      } else {
+        room.phase = Phase.RESULTS;
+        room.resultsStep = 0;
+      }
+      return room;
+    }
+
     case 'PSYCHIATRIST_GUESSES': {
       if (room.phase !== Phase.QUESTIONING) throw new Error('Not in questioning phase');
       room.phase = Phase.REVEAL_GUESS;
@@ -158,6 +207,7 @@ export function transition(room, action) {
           room.phase = Phase.CRAZY_PATIENT_GUESS;
         } else {
           room.phase = Phase.RESULTS;
+          room.resultsStep = 0;
         }
       } else {
         // Wrong guess — back to questioning
@@ -167,6 +217,7 @@ export function transition(room, action) {
           // Ran out of rounds, psychiatrist failed
           room.guessTime = null;
           room.phase = Phase.RESULTS;
+          room.resultsStep = 0;
         }
       }
       return room;
@@ -174,8 +225,8 @@ export function transition(room, action) {
 
     case 'MARK_CRAZY_PATIENT': {
       if (room.phase !== Phase.CRAZY_PATIENT_GUESS) throw new Error('Not in crazy patient guess phase');
-      if (!action.caught) {
-        // Crazy patient wasn't caught — add to crazies leaderboard
+      // Only score if there actually was a crazy patient (not a bluff round)
+      if (!action.caught && room.crazyPatientId) {
         const crazyPlayer = room.players.find(p => p.id === room.crazyPatientId);
         room.leaderboard.crazies.push({
           playerId: room.crazyPatientId,
@@ -184,6 +235,14 @@ export function transition(room, action) {
         });
       }
       room.phase = Phase.RESULTS;
+      // Jump to crazy reveal step (index 2: psychiatrist=0, symptom=1, crazy=2)
+      room.resultsStep = 2;
+      return room;
+    }
+
+    case 'ADVANCE_RESULTS': {
+      if (room.phase !== Phase.RESULTS) throw new Error('Not in results phase');
+      room.resultsStep = (room.resultsStep ?? 0) + 1;
       return room;
     }
 
@@ -196,6 +255,23 @@ export function transition(room, action) {
 
     case 'END_GAME': {
       room.phase = Phase.END_GAME;
+      return room;
+    }
+
+    case 'RESET_LOBBY': {
+      room.phase = Phase.LOBBY;
+      room.psychiatristId = null;
+      room.psychiatristOrder = [];
+      room.psychiatristIndex = 0;
+      room.sharedSymptom = null;
+      room.crazyPatientId = null;
+      room.crazySymptom = null;
+      room.readyPlayers = new Set();
+      room.questionRound = 0;
+      room.questioningStartTime = null;
+      room.guessTime = null;
+      room.usedSymptoms = new Set();
+      room.leaderboard = { bestPsychiatrist: [], crazies: [] };
       return room;
     }
 
@@ -232,6 +308,7 @@ export function getPlayerView(room, playerId) {
     readyCount: room.readyPlayers.size,
     totalPlayers: room.players.filter(p => p.connected).length,
     leaderboard: room.leaderboard,
+    resultsStep: room.resultsStep ?? 0,
     customSymptoms: room.customSymptoms,
   };
 

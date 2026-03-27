@@ -29,4 +29,7 @@ export const Events = {
   HOST_MARK_CRAZY_PATIENT: 'host:mark_crazy_patient',
   HOST_END_ROUND: 'host:end_round',
   HOST_END_GAME: 'host:end_game',
+  HOST_RESET_LOBBY: 'host:reset_lobby',
+  HOST_GIVE_UP: 'host:give_up',
+  HOST_ADVANCE_RESULTS: 'host:advance_results',
 };

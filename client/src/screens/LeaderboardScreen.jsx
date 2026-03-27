@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { usePlayer } from '../context/PlayerContext';
 import { useGame } from '../context/GameContext';
 import { Events } from 'shared/events.js';
+import { Phase } from 'shared/phases.js';
 import { formatTime } from '../hooks/useCountdown';
 
 const RANK_CLASSES = ['gold', 'silver', 'bronze'];
@@ -26,8 +27,15 @@ export default function LeaderboardScreen() {
     }
   }, [player]);
 
+  // Navigate all clients back to lobby when host resets
+  useEffect(() => {
+    if (gameState?.phase === Phase.LOBBY) {
+      navigate(`/lobby/${roomCode}`);
+    }
+  }, [gameState?.phase, roomCode, navigate]);
+
   function handlePlayAgain() {
-    navigate(`/lobby/${roomCode}`);
+    socket.emit(Events.HOST_RESET_LOBBY);
   }
 
   function handleHome() {
@@ -56,7 +64,7 @@ export default function LeaderboardScreen() {
         {/* Best Psychiatrist Leaderboard */}
         <div className="card">
           <h3 className="mb-md" style={{ color: 'var(--accent-blue)' }}>
-            Best Psychiatrists
+            Psychiatrists Leaderboard
           </h3>
           {leaderboard.bestPsychiatrist.length === 0 ? (
             <p className="text-muted">No correct guesses this game!</p>
@@ -81,21 +89,18 @@ export default function LeaderboardScreen() {
         {isCrazyVariant && (
           <div className="card">
             <h3 className="mb-md" style={{ color: 'var(--accent-primary)' }}>
-              Sneakiest Crazies
+              Craziest Patients
             </h3>
             {leaderboard.crazies.length === 0 ? (
               <p className="text-muted">Every crazy patient was caught!</p>
             ) : (
               leaderboard.crazies.map((entry, i) => (
-                <div key={`${entry.playerId}-${entry.crazySymptom}`} className="leaderboard-entry">
+                <div key={`${entry.playerId}-${i}`} className="leaderboard-entry">
                   <span className={`leaderboard-rank ${RANK_CLASSES[i] || ''}`}>
                     {RANK_MEDALS[i] || `#${i + 1}`}
                   </span>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: 700 }}>{entry.playerName}</p>
-                    <p className="text-muted" style={{ fontSize: '0.8rem' }}>
-                      hid &quot;{entry.crazySymptom}&quot;
-                    </p>
                   </div>
                 </div>
               ))
@@ -104,9 +109,13 @@ export default function LeaderboardScreen() {
         )}
 
         <div className="flex-col gap-md w-full">
-          <button className="btn btn-primary btn-full" onClick={handlePlayAgain}>
-            Play Again
-          </button>
+          {gameState.isHost ? (
+            <button className="btn btn-primary btn-full" onClick={handlePlayAgain}>
+              Play Again
+            </button>
+          ) : (
+            <p className="text-muted" style={{ textAlign: 'center' }}>Waiting for host to start a new game...</p>
+          )}
           <button className="btn btn-secondary btn-full" onClick={handleHome}>
             Back to Home
           </button>
