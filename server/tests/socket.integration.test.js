@@ -217,7 +217,6 @@ describe('Game: start with 3 players', () => {
 
     for (const state of states) {
       expect(state.phase).toBe(Phase.SHOWING_ROLES);
-      expect(state.currentRound).toBe(1);
     }
   });
 
@@ -268,6 +267,222 @@ describe('Game: cannot start with fewer than 3 players', () => {
 
     host.disconnect();
     guest.disconnect();
+  });
+});
+
+describe('Game: full Classic round (SHOWING_ROLES → QUESTIONING → REVEAL_GUESS → RESULTS)', () => {
+  let sockets;
+  let roomCode;
+
+  beforeEach(async () => {
+    sockets = [connect(), connect(), connect()];
+    sockets[0].emit(Events.ROOM_CREATE, { playerName: 'Host' });
+    const created = await waitFor(sockets[0], Events.ROOM_CREATED);
+    roomCode = created.roomCode;
+
+    for (let i = 1; i < 3; i++) {
+      sockets[i].emit(Events.ROOM_JOIN, { roomCode, playerName: `Player${i}` });
+      await waitFor(sockets[i], Events.ROOM_JOINED);
+    }
+  });
+
+  afterEach(() => sockets.forEach(s => { if (s.connected) s.disconnect(); }));
+
+  it('correct guess advances to RESULTS with leaderboard entry', async () => {
+    // Start game
+    sockets.forEach(s => waitForState(s));
+    sockets[0].emit(Events.GAME_START);
+    const showingStates = await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+    expect(showingStates.every(s => s.phase === Phase.SHOWING_ROLES)).toBe(true);
+
+    // All ready → QUESTIONING
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    // Psychiatrist guesses → REVEAL_GUESS
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    // Host marks correct → RESULTS
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: true });
+    const resultsStates = await Promise.all(sockets.map(s => waitForState(s, Phase.RESULTS)));
+
+    for (const state of resultsStates) {
+      expect(state.phase).toBe(Phase.RESULTS);
+      expect(state.sharedSymptom).toBeTruthy();
+      expect(state.guessedCorrectly).toBe(true);
+      expect(state.guessTime).toBeGreaterThan(0);
+      expect(state.leaderboard.bestPsychiatrist).toHaveLength(1);
+    }
+  });
+
+  it('incorrect guess returns to QUESTIONING', async () => {
+    sockets.forEach(s => waitForState(s));
+    sockets[0].emit(Events.GAME_START);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: false });
+    const backToQuestioning = await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    for (const state of backToQuestioning) {
+      expect(state.phase).toBe(Phase.QUESTIONING);
+      expect(state.questionRound).toBe(2);
+    }
+  });
+});
+
+describe('Game: Crazy Patient variant', () => {
+  let sockets;
+  let roomCode;
+
+  beforeEach(async () => {
+    sockets = [connect(), connect(), connect()];
+    sockets[0].emit(Events.ROOM_CREATE, { playerName: 'Host' });
+    const created = await waitFor(sockets[0], Events.ROOM_CREATED);
+    roomCode = created.roomCode;
+
+    for (let i = 1; i < 3; i++) {
+      sockets[i].emit(Events.ROOM_JOIN, { roomCode, playerName: `Player${i}` });
+      await waitFor(sockets[i], Events.ROOM_JOINED);
+    }
+
+    // Set crazy_patient variant
+    sockets[0].emit(Events.LOBBY_UPDATE_SETTINGS, { variant: 'crazy_patient' });
+    await waitFor(sockets[0], Events.LOBBY_SETTINGS_UPDATED);
+  });
+
+  afterEach(() => sockets.forEach(s => { if (s.connected) s.disconnect(); }));
+
+  it('start assigns exactly one crazy patient and one psychiatrist', async () => {
+    sockets[0].emit(Events.GAME_START);
+    const states = await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    const roles = states.map(s => s.myRole);
+    expect(roles).toContain('psychiatrist');
+    expect(roles).toContain('crazy_patient');
+    expect(roles.filter(r => r === 'crazy_patient')).toHaveLength(1);
+    expect(roles.filter(r => r === 'psychiatrist')).toHaveLength(1);
+  });
+
+  it('crazy patient sees both sharedSymptom and crazySymptom', async () => {
+    sockets[0].emit(Events.GAME_START);
+    const states = await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    const crazyState = states.find(s => s.myRole === 'crazy_patient');
+    expect(crazyState.sharedSymptom).toBeTruthy();
+    expect(crazyState.crazySymptom).toBeTruthy();
+  });
+
+  it('regular patient sees only sharedSymptom, not crazySymptom', async () => {
+    sockets[0].emit(Events.GAME_START);
+    const states = await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    const patientState = states.find(s => s.myRole === 'patient');
+    expect(patientState.sharedSymptom).toBeTruthy();
+    expect(patientState.crazySymptom).toBeUndefined();
+  });
+
+  it('psychiatrist sees neither sharedSymptom nor crazySymptom', async () => {
+    sockets[0].emit(Events.GAME_START);
+    const states = await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    const pState = states.find(s => s.myRole === 'psychiatrist');
+    expect(pState.sharedSymptom).toBeUndefined();
+    expect(pState.crazySymptom).toBeUndefined();
+  });
+
+  it('correct guess → CRAZY_PATIENT_GUESS phase (not RESULTS)', async () => {
+    sockets[0].emit(Events.GAME_START);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: true });
+    const cpStates = await Promise.all(sockets.map(s => waitForState(s, Phase.CRAZY_PATIENT_GUESS)));
+
+    for (const state of cpStates) {
+      expect(state.phase).toBe(Phase.CRAZY_PATIENT_GUESS);
+    }
+  });
+
+  it('HOST_MARK_CRAZY_PATIENT caught=true → RESULTS, crazy patient NOT on crazies leaderboard', async () => {
+    sockets[0].emit(Events.GAME_START);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: true });
+    await Promise.all(sockets.map(s => waitForState(s, Phase.CRAZY_PATIENT_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_CRAZY_PATIENT, { caught: true });
+    const resultsStates = await Promise.all(sockets.map(s => waitForState(s, Phase.RESULTS)));
+
+    for (const state of resultsStates) {
+      expect(state.phase).toBe(Phase.RESULTS);
+      expect(state.leaderboard.crazies).toHaveLength(0);
+    }
+  });
+
+  it('HOST_MARK_CRAZY_PATIENT caught=false → RESULTS, crazy patient on crazies leaderboard', async () => {
+    sockets[0].emit(Events.GAME_START);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: true });
+    await Promise.all(sockets.map(s => waitForState(s, Phase.CRAZY_PATIENT_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_CRAZY_PATIENT, { caught: false });
+    const resultsStates = await Promise.all(sockets.map(s => waitForState(s, Phase.RESULTS)));
+
+    for (const state of resultsStates) {
+      expect(state.phase).toBe(Phase.RESULTS);
+      expect(state.leaderboard.crazies).toHaveLength(1);
+      expect(state.leaderboard.crazies[0].crazySymptom).toBeTruthy();
+    }
+  });
+
+  it('RESULTS reveals crazy patient identity and crazySymptom to all players', async () => {
+    sockets[0].emit(Events.GAME_START);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.SHOWING_ROLES)));
+
+    sockets.forEach(s => s.emit(Events.GAME_READY));
+    await Promise.all(sockets.map(s => waitForState(s, Phase.QUESTIONING)));
+
+    sockets[0].emit(Events.HOST_PSYCHIATRIST_GUESSES);
+    await Promise.all(sockets.map(s => waitForState(s, Phase.REVEAL_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_GUESS, { correct: true });
+    await Promise.all(sockets.map(s => waitForState(s, Phase.CRAZY_PATIENT_GUESS)));
+
+    sockets[0].emit(Events.HOST_MARK_CRAZY_PATIENT, { caught: false });
+    const resultsStates = await Promise.all(sockets.map(s => waitForState(s, Phase.RESULTS)));
+
+    // Everyone in RESULTS sees the full reveal
+    for (const state of resultsStates) {
+      expect(state.crazyPatientId).toBeTruthy();
+      expect(state.crazyPatientName).toBeTruthy();
+      expect(state.crazySymptom).toBeTruthy();
+      expect(state.sharedSymptom).toBeTruthy();
+    }
   });
 });
 

@@ -45,7 +45,7 @@ export default function LeaderboardScreen() {
     );
   }
 
-  const { leaderboard, roundHistory, settings } = gameState;
+  const { leaderboard, settings } = gameState;
   const isCrazyVariant = settings?.variant === 'crazy_patient';
 
   return (
@@ -62,14 +62,14 @@ export default function LeaderboardScreen() {
             <p className="text-muted">No correct guesses this game!</p>
           ) : (
             leaderboard.bestPsychiatrist.map((entry, i) => (
-              <div key={`${entry.playerId}-${entry.round}`} className="leaderboard-entry">
+              <div key={`${entry.playerId}-${entry.time}`} className="leaderboard-entry">
                 <span className={`leaderboard-rank ${RANK_CLASSES[i] || ''}`}>
                   {RANK_MEDALS[i] || `#${i + 1}`}
                 </span>
                 <div style={{ flex: 1 }}>
                   <p style={{ fontWeight: 700 }}>{entry.playerName}</p>
                   <p className="text-muted" style={{ fontSize: '0.8rem' }}>
-                    Round {entry.round} — guessed in {formatTime(entry.time)}
+                    guessed in {formatTime(entry.time)}
                   </p>
                 </div>
               </div>
@@ -87,14 +87,14 @@ export default function LeaderboardScreen() {
               <p className="text-muted">Every crazy patient was caught!</p>
             ) : (
               leaderboard.crazies.map((entry, i) => (
-                <div key={`${entry.playerId}-${entry.round}`} className="leaderboard-entry">
+                <div key={`${entry.playerId}-${entry.crazySymptom}`} className="leaderboard-entry">
                   <span className={`leaderboard-rank ${RANK_CLASSES[i] || ''}`}>
                     {RANK_MEDALS[i] || `#${i + 1}`}
                   </span>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: 700 }}>{entry.playerName}</p>
                     <p className="text-muted" style={{ fontSize: '0.8rem' }}>
-                      Round {entry.round} — hid &quot;{entry.crazySymptom}&quot;
+                      hid &quot;{entry.crazySymptom}&quot;
                     </p>
                   </div>
                 </div>
@@ -102,45 +102,6 @@ export default function LeaderboardScreen() {
             )}
           </div>
         )}
-
-        {/* Round History */}
-        <div className="card">
-          <h3 className="mb-md">Round History</h3>
-          <div className="flex-col gap-sm">
-            {roundHistory.map(r => (
-              <div
-                key={r.round}
-                style={{
-                  padding: '12px',
-                  background: 'var(--bg-secondary)',
-                  borderRadius: 'var(--border-radius-sm)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="badge badge-green">Round {r.round}</span>
-                  {r.guessedCorrectly ? (
-                    <span style={{ color: 'var(--accent-green)', fontWeight: 700, fontSize: '0.85rem' }}>
-                      ✓ {formatTime(r.guessTime)}
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: '0.85rem' }}>
-                      ✗ Not guessed
-                    </span>
-                  )}
-                </div>
-                <p style={{ marginTop: 6, fontWeight: 700 }}>{r.sharedSymptom}</p>
-                <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>
-                  Psychiatrist: {r.psychiatristName}
-                </p>
-                {r.crazyPatientName && (
-                  <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: 2 }}>
-                    Crazy patient: {r.crazyPatientName} (&quot;{r.crazySymptom}&quot;)
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
 
         <div className="flex-col gap-md w-full">
           <button className="btn btn-primary btn-full" onClick={handlePlayAgain}>

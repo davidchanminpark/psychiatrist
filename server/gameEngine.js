@@ -14,14 +14,45 @@ function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function selectSymptom(room, pool) {
+// Pick from pool if any unused remain; returns null if pool exhausted
+function tryPool(room, pool) {
   const available = pool.filter(s => !room.usedSymptoms.has(s.id));
-  if (available.length === 0) {
-    // Reset if all used
-    room.usedSymptoms.clear();
-    return pickRandom(pool);
+  return available.length > 0 ? pickRandom(available) : null;
+}
+
+// Pick from built-in bank, resetting usedSymptoms if all exhausted
+function pickFromBank(room) {
+  const bank = getSharedSymptoms();
+  const s = tryPool(room, bank);
+  if (s) return s;
+  room.usedSymptoms.clear();
+  return pickRandom(bank);
+}
+
+function selectSharedSymptom(room) {
+  const source = room.settings.symptomSource;
+  const custom = room.customSymptoms;
+
+  if (source === 'custom' && custom.length > 0) {
+    // Use custom pool; when exhausted fall back to built-in bank
+    return tryPool(room, custom) ?? pickFromBank(room);
   }
-  return pickRandom(available);
+
+  if (source === 'mixed' && custom.length > 0) {
+    // Alternate: custom on odd rounds, bank on even rounds.
+    // currentRound is the round about to start (incremented later in assignRoles).
+    const upcomingRound = room.currentRound + 1;
+    const preferCustom = upcomingRound % 2 === 1;
+    if (preferCustom) {
+      // Try custom; if exhausted, use bank
+      return tryPool(room, custom) ?? pickFromBank(room);
+    }
+    // Even round: always bank
+    return pickFromBank(room);
+  }
+
+  // builtin (or custom/mixed with no custom symptoms submitted)
+  return pickFromBank(room);
 }
 
 function assignRoles(room) {
@@ -45,13 +76,7 @@ function assignRoles(room) {
   }
 
   // Select shared symptom
-  const sharedPool = room.settings.symptomSource === 'custom'
-    ? room.customSymptoms
-    : room.settings.symptomSource === 'mixed'
-      ? [...getSharedSymptoms(), ...room.customSymptoms]
-      : getSharedSymptoms();
-
-  const symptom = selectSymptom(room, sharedPool);
+  const symptom = selectSharedSymptom(room);
   room.sharedSymptom = symptom;
   room.usedSymptoms.add(symptom.id);
 
@@ -70,7 +95,6 @@ function assignRoles(room) {
     room.crazySymptom = null;
   }
 
-  room.currentRound++;
   room.questionRound = 0;
   room.readyPlayers = new Set();
   room.questioningStartTime = null;
@@ -127,7 +151,6 @@ export function transition(room, action) {
           playerId: room.psychiatristId,
           playerName: psychiatrist.name,
           time: room.guessTime,
-          round: room.currentRound,
         });
         room.leaderboard.bestPsychiatrist.sort((a, b) => a.time - b.time);
 
@@ -158,7 +181,6 @@ export function transition(room, action) {
           playerId: room.crazyPatientId,
           playerName: crazyPlayer.name,
           crazySymptom: room.crazySymptom.text,
-          round: room.currentRound,
         });
       }
       room.phase = Phase.RESULTS;
@@ -167,27 +189,8 @@ export function transition(room, action) {
 
     case 'END_ROUND': {
       if (room.phase !== Phase.RESULTS) throw new Error('Not in results phase');
-      // Save round history
-      room.roundHistory.push({
-        round: room.currentRound,
-        psychiatristId: room.psychiatristId,
-        psychiatristName: room.players.find(p => p.id === room.psychiatristId)?.name,
-        sharedSymptom: room.sharedSymptom.text,
-        guessTime: room.guessTime,
-        guessedCorrectly: room.guessTime !== null,
-        crazyPatientId: room.crazyPatientId,
-        crazyPatientName: room.crazyPatientId
-          ? room.players.find(p => p.id === room.crazyPatientId)?.name
-          : null,
-        crazySymptom: room.crazySymptom?.text || null,
-      });
-
-      if (room.currentRound >= room.settings.totalRounds) {
-        room.phase = Phase.END_GAME;
-      } else {
-        assignRoles(room);
-        room.phase = Phase.SHOWING_ROLES;
-      }
+      assignRoles(room);
+      room.phase = Phase.SHOWING_ROLES;
       return room;
     }
 
@@ -214,7 +217,6 @@ export function getPlayerView(room, playerId) {
   const base = {
     roomCode: room.roomCode,
     phase: room.phase,
-    currentRound: room.currentRound,
     questionRound: room.questionRound,
     isHost,
     myRole,
@@ -227,11 +229,9 @@ export function getPlayerView(room, playerId) {
     psychiatristId: room.psychiatristId,
     psychiatristName: room.players.find(p => p.id === room.psychiatristId)?.name || null,
     settings: room.settings,
-    totalRounds: room.settings.totalRounds,
     readyCount: room.readyPlayers.size,
     totalPlayers: room.players.filter(p => p.connected).length,
     leaderboard: room.leaderboard,
-    roundHistory: room.roundHistory,
     customSymptoms: room.customSymptoms,
   };
 

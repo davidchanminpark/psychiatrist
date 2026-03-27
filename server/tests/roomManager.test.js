@@ -32,7 +32,6 @@ describe('createRoom', () => {
     const { room } = createRoom('Bob', 'socket_2');
     expect(room.phase).toBe(Phase.LOBBY);
     expect(room.settings.variant).toBe('classic');
-    expect(room.settings.totalRounds).toBe(5);
     expect(room.settings.maxQuestionRounds).toBe(10);
     deleteRoom(room.roomCode);
   });
@@ -56,11 +55,10 @@ describe('createRoom', () => {
     deleteRoom(room.roomCode);
   });
 
-  it('initializes empty leaderboard and round history', () => {
+  it('initializes empty leaderboard', () => {
     const { room } = createRoom('Host', 'socket_y');
     expect(room.leaderboard.bestPsychiatrist).toEqual([]);
     expect(room.leaderboard.crazies).toEqual([]);
-    expect(room.roundHistory).toEqual([]);
     deleteRoom(room.roomCode);
   });
 });

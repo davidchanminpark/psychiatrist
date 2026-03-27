@@ -5,7 +5,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { useGame } from '../context/GameContext';
 import { Events } from 'shared/events.js';
 import { Phase } from 'shared/phases.js';
-import { useTimer, formatTime } from '../hooks/useCountdown';
+import { formatTime } from '../hooks/useCountdown';
 
 function RoleReveal({ gameState, onReady }) {
   const { myRole, sharedSymptom, crazySymptom, psychiatristName } = gameState;
@@ -68,12 +68,8 @@ function RoleReveal({ gameState, onReady }) {
 }
 
 function QuestioningView({ gameState }) {
-  const elapsed = useTimer(gameState.questioningStartTime);
-
   return (
     <div className="flex-col gap-lg items-center text-center">
-      <div className="badge badge-green">Round {gameState.currentRound}</div>
-      <div className="timer">{formatTime(elapsed)}</div>
       <p className="text-muted">Question Round {gameState.questionRound}</p>
 
       {gameState.myRole === 'psychiatrist' && (
@@ -200,16 +196,14 @@ function HostControls({ gameState }) {
             className="btn btn-primary btn-sm"
             onClick={() => socket.emit(Events.HOST_END_ROUND)}
           >
-            {gameState.currentRound >= gameState.totalRounds ? 'Final Results' : 'Next Round'}
+            Next Round
           </button>
-          {gameState.currentRound < gameState.totalRounds && (
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={() => socket.emit(Events.HOST_END_GAME)}
-            >
-              End Game
-            </button>
-          )}
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={() => socket.emit(Events.HOST_END_GAME)}
+          >
+            End Game
+          </button>
         </>
       )}
     </div>

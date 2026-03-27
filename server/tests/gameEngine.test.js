@@ -42,14 +42,6 @@ describe('transition: START_GAME', () => {
     cleanup(room);
   });
 
-  it('increments currentRound to 1', () => {
-    const { room } = makeRoom(3);
-    expect(room.currentRound).toBe(0);
-    transition(room, { type: 'START_GAME' });
-    expect(room.currentRound).toBe(1);
-    cleanup(room);
-  });
-
   it('throws if not in LOBBY phase', () => {
     const { room } = makeRoom(3);
     room.phase = Phase.QUESTIONING;
@@ -255,29 +247,10 @@ describe('transition: END_ROUND', () => {
     return room;
   }
 
-  it('saves round to history', () => {
+  it('always moves to SHOWING_ROLES', () => {
     const room = setupResults();
-    transition(room, { type: 'END_ROUND' });
-    expect(room.roundHistory).toHaveLength(1);
-    expect(room.roundHistory[0].sharedSymptom).toBeTruthy();
-    cleanup(room);
-  });
-
-  it('moves to SHOWING_ROLES if rounds remain', () => {
-    const room = setupResults();
-    room.settings.totalRounds = 5;
-    room.currentRound = 1;
     transition(room, { type: 'END_ROUND' });
     expect(room.phase).toBe(Phase.SHOWING_ROLES);
-    cleanup(room);
-  });
-
-  it('moves to END_GAME after last round', () => {
-    const room = setupResults();
-    room.settings.totalRounds = 3;
-    room.currentRound = 3;
-    transition(room, { type: 'END_ROUND' });
-    expect(room.phase).toBe(Phase.END_GAME);
     cleanup(room);
   });
 
@@ -390,6 +363,97 @@ describe('getPlayerView: information filtering', () => {
     room.questioningStartTime = Date.now();
     const view = getPlayerView(room, room.players[0].id);
     expect(view.questioningStartTime).toBeTruthy();
+    cleanup(room);
+  });
+});
+
+// Helper: add custom symptoms to a room
+function addCustomSymptoms(room, count) {
+  for (let i = 0; i < count; i++) {
+    room.customSymptoms.push({ id: `c${i}`, text: `Custom symptom ${i}`, category: 'custom' });
+  }
+}
+
+describe('selectSharedSymptom: custom mode', () => {
+  it('uses a custom symptom when custom pool has items', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'custom';
+    addCustomSymptoms(room, 3);
+    transition(room, { type: 'START_GAME' });
+    expect(room.sharedSymptom.category).toBe('custom');
+    cleanup(room);
+  });
+
+  it('falls back to built-in bank when custom pool is exhausted', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'custom';
+    addCustomSymptoms(room, 1);
+    // Exhaust the one custom symptom
+    room.usedSymptoms.add('c0');
+    transition(room, { type: 'START_GAME' });
+    // Should have used a built-in symptom (not category 'custom')
+    expect(room.sharedSymptom.category).not.toBe('custom');
+    cleanup(room);
+  });
+
+  it('falls back to built-in when no custom symptoms submitted', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'custom';
+    // No custom symptoms added
+    transition(room, { type: 'START_GAME' });
+    expect(room.sharedSymptom.category).not.toBe('custom');
+    cleanup(room);
+  });
+});
+
+describe('selectSharedSymptom: mixed mode', () => {
+  it('round 1 (odd) picks from custom pool', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'mixed';
+    addCustomSymptoms(room, 5);
+    // currentRound is 0, upcomingRound = 1 (odd) → prefers custom
+    transition(room, { type: 'START_GAME' });
+    expect(room.sharedSymptom.category).toBe('custom');
+    cleanup(room);
+  });
+
+  it('round 2 (even) picks from built-in bank', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'mixed';
+    addCustomSymptoms(room, 5);
+    // Simulate being at round 1 already (currentRound = 1), so upcomingRound = 2 (even)
+    room.currentRound = 1;
+    room.psychiatristOrder = room.players.map(p => p.id);
+    room.psychiatristIndex = 1;
+    room.phase = Phase.RESULTS;
+    room.sharedSymptom = room.customSymptoms[0];
+    room.usedSymptoms.add('c0');
+    room.roundHistory = [{}]; // dummy
+    room.settings.totalRounds = 5;
+    room.guessTime = 1000;
+    transition(room, { type: 'END_ROUND' });
+    // After END_ROUND → assignRoles for round 2
+    expect(room.sharedSymptom.category).not.toBe('custom');
+    cleanup(room);
+  });
+
+  it('falls back to built-in on odd round when custom is exhausted', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'mixed';
+    addCustomSymptoms(room, 1);
+    room.usedSymptoms.add('c0'); // exhaust custom
+    // upcomingRound = 1 (odd) → prefers custom, but exhausted → bank
+    transition(room, { type: 'START_GAME' });
+    expect(room.sharedSymptom.category).not.toBe('custom');
+    cleanup(room);
+  });
+
+  it('falls back to built-in when no custom symptoms submitted', () => {
+    const { room } = makeRoom(3);
+    room.settings.symptomSource = 'mixed';
+    // No custom symptoms added
+    transition(room, { type: 'START_GAME' });
+    expect(room.sharedSymptom.category).not.toBe('custom');
     cleanup(room);
   });
 });
